@@ -14,7 +14,7 @@ namespace Blog.IdentityServer.Data.MigrationsMySql
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "3.1.3")
+                .HasAnnotation("ProductVersion", "3.1.5")
                 .HasAnnotation("Relational:MaxIdentifierLength", 64);
 
             modelBuilder.Entity("Blog.IdentityServer.Models.ApplicationRole", b =>
@@ -94,6 +94,9 @@ namespace Blog.IdentityServer.Data.MigrationsMySql
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("tinyint(1)");
 
+                    b.Property<string>("FirstQuestion")
+                        .HasColumnType("longtext CHARACTER SET utf8mb4");
+
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("tinyint(1)");
 
@@ -121,6 +124,9 @@ namespace Blog.IdentityServer.Data.MigrationsMySql
                         .HasColumnType("tinyint(1)");
 
                     b.Property<string>("RealName")
+                        .HasColumnType("longtext CHARACTER SET utf8mb4");
+
+                    b.Property<string>("SecondQuestion")
                         .HasColumnType("longtext CHARACTER SET utf8mb4");
 
                     b.Property<string>("SecurityStamp")

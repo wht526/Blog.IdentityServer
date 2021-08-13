@@ -40,8 +40,6 @@ namespace Blog.IdentityServer
                 SeedData.EnsureSeedData(host.Services);
             }
 
-            Console.WriteLine("项目启动成功，端口：5004");
-
             host.Run();
         }
 
@@ -53,9 +51,9 @@ namespace Blog.IdentityServer
                .ConfigureKestrel(serverOptions =>
                {
                    serverOptions.AllowSynchronousIO = true;//启用同步 IO
-                })
+               })
                .UseStartup<Startup>()
-               .UseUrls("http://localhost:5004")
+               .UseUrls("http://*:5004")
                .ConfigureLogging((hostingContext, builder) =>
                {
                    builder.ClearProviders();

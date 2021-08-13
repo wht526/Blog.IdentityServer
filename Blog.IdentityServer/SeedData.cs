@@ -23,9 +23,8 @@ namespace Blog.IdentityServer
         public static void EnsureSeedData(IServiceProvider serviceProvider)
         {
             /*
-             * mysql和sqlserver的迁移操作步骤一致，不过本项目已经迁移好，在Data文件夹下：
-             * msql使用MigrationsMySql文件夹下的迁移记录，卸载另一个Migrations文件夹
-             * sqlserver使用Migrations文件夹下的迁移记录，卸载另一个MigrationsMySql文件夹
+             * 本项目同时支持Mysql和Sqlserver，我一直使用的是Mysql，所以Mysql的迁移文件已经配置号，在Data文件夹下，
+             * 直接执行update-database xxxx,那三步即可。如果你使用sqlserver，可以先从迁移开始，下边有步骤
              * 
              * 当然你也可以都删掉，自己重新做迁移。
              * 迁移完成后，执行dotnet run /seed
@@ -113,7 +112,7 @@ namespace Blog.IdentityServer
 
                                 //var result = userMgr.CreateAsync(userItem, "BlogIdp123$" + item.uLoginPWD).Result;
 
-                                // 因为导入的密码是 MD5密文，所以这里统一都用初始密码了,可以先登录，然后修改密码
+                                // 因为导入的密码是 MD5密文，所以这里统一都用初始密码了,可以先登录，然后修改密码，超级管理员：blogadmin
                                 var result = userMgr.CreateAsync(userItem, "BlogIdp123$InitPwd").Result;
                                 if (!result.Succeeded)
                                 {
@@ -239,6 +238,20 @@ namespace Blog.IdentityServer
             else
             {
                 Console.WriteLine("ApiResources already populated");
+            }
+
+            if (!context.ApiScopes.Any())
+            {
+                Console.WriteLine("ApiScopes being populated");
+                foreach (var resource in Config.GetApiScopes().ToList())
+                {
+                    context.ApiScopes.Add(resource.ToEntity());
+                }
+                context.SaveChanges();
+            }
+            else
+            {
+                Console.WriteLine("ApiScopes already populated");
             }
         }
     }

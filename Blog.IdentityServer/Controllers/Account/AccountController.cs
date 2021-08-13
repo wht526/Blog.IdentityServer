@@ -20,6 +20,7 @@ using System;
 using System.Collections.Generic;
 using Blog.IdentityServer.Models;
 using Microsoft.AspNetCore.Authorization;
+using Blog.Core.Common.Helper;
 
 namespace IdentityServer4.Quickstart.UI
 {
@@ -79,18 +80,26 @@ namespace IdentityServer4.Quickstart.UI
         [Route("oauth2/authorize")]
         public async Task<IActionResult> Login(LoginInputModel model, string button)
         {
+            // check if we are in the context of an authorization request
+            var context = await _interaction.GetAuthorizationContextAsync(model.ReturnUrl);
+
             if (button != "login")
             {
-                // the user clicked the "cancel" button
-                var context = await _interaction.GetAuthorizationContextAsync(model.ReturnUrl);
                 if (context != null)
                 {
                     // if the user cancels, send a result back into IdentityServer as if they 
                     // denied the consent (even if this client does not require consent).
                     // this will send back an access denied OIDC error response to the client.
-                    await _interaction.GrantConsentAsync(context, ConsentResponse.Denied);
+                    await _interaction.DenyAuthorizationAsync(context, AuthorizationError.AccessDenied);
 
                     // we can trust model.ReturnUrl since GetAuthorizationContextAsync returned non-null
+                    if (context.IsNativeClient())
+                    {
+                        // The client is native, so this change in how to
+                        // return the response is for better UX for the end user.
+                        return this.LoadingPage("Redirect", model.ReturnUrl);
+                    }
+
                     return Redirect(model.ReturnUrl);
                 }
                 else
@@ -102,12 +111,11 @@ namespace IdentityServer4.Quickstart.UI
 
             if (ModelState.IsValid)
             {
-                var user = await _userManager.FindByNameAsync(model.Username);
+                var user = _userManager.Users.FirstOrDefault(d => (d.LoginName == model.Username || d.Email == model.Username) && !d.tdIsDelete);
 
-
-                if (!user.tdIsDelete)
+                if (user != null && !user.tdIsDelete)
                 {
-                    var result = await _signInManager.PasswordSignInAsync(model.Username, model.Password, model.RememberLogin, lockoutOnFailure: true);
+                    var result = await _signInManager.PasswordSignInAsync(user.LoginName, model.Password, model.RememberLogin, lockoutOnFailure: true);
                     if (result.Succeeded)
                     {
                         await _events.RaiseAsync(new UserLoginSuccessEvent(user.UserName, user.Id.ToString(), user.UserName));
@@ -120,6 +128,24 @@ namespace IdentityServer4.Quickstart.UI
                         }
 
                         return Redirect("~/");
+                    }
+                    else
+                    {
+                        var result2 = await _signInManager.PasswordSignInAsync(user.UserName, model.Password, model.RememberLogin, lockoutOnFailure: true);
+
+                        if (result2.Succeeded)
+                        {
+                            await _events.RaiseAsync(new UserLoginSuccessEvent(user.UserName, user.Id.ToString(), user.UserName));
+
+                            // make sure the returnUrl is still valid, and if so redirect back to authorize endpoint or a local page
+                            // the IsLocalUrl check is only necessary if you want to support additional local pages, otherwise IsValidReturnUrl is more strict
+                            if (_interaction.IsValidReturnUrl(model.ReturnUrl) || Url.IsLocalUrl(model.ReturnUrl))
+                            {
+                                return Redirect(model.ReturnUrl);
+                            }
+
+                            return Redirect("~/");
+                        }
                     }
                 }
 
@@ -199,7 +225,18 @@ namespace IdentityServer4.Quickstart.UI
             additionalLocalClaims.AddRange(principal.Claims);
             var name = principal.FindFirst(JwtClaimTypes.Name)?.Value ?? user.Id.ToString();
             await _events.RaiseAsync(new UserLoginSuccessEvent(provider, providerUserId, user.Id.ToString(), name));
-            await HttpContext.SignInAsync(user.Id.ToString(), name, provider, localSignInProps, additionalLocalClaims.ToArray());
+
+            //await HttpContext.SignInAsync(user.Id.ToString(), name, provider, localSignInProps, additionalLocalClaims.ToArray());
+
+            var isuser = new IdentityServerUser(user.Id.ToString())
+            {
+                DisplayName = name,
+                IdentityProvider = provider,
+                AdditionalClaims = additionalLocalClaims
+            };
+
+            await HttpContext.SignInAsync(isuser, localSignInProps);
+
 
             // delete temporary cookie used during external authentication
             await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
@@ -298,9 +335,9 @@ namespace IdentityServer4.Quickstart.UI
                 }).ToList();
 
             var allowLocal = true;
-            if (context?.ClientId != null)
+            if (context?.Client.ClientId != null)
             {
-                var client = await _clientStore.FindEnabledClientByIdAsync(context.ClientId);
+                var client = await _clientStore.FindEnabledClientByIdAsync(context.Client.ClientId);
                 if (client != null)
                 {
                     allowLocal = client.EnableLocalLogin;
@@ -583,6 +620,8 @@ namespace IdentityServer4.Quickstart.UI
                         sex = model.Sex,
                         age = model.Birth.Year - DateTime.Now.Year,
                         birth = model.Birth,
+                        FirstQuestion = model.FirstQuestion,
+                        SecondQuestion = model.SecondQuestion,
                         addr = "",
                         tdIsDelete = false
                     };
@@ -592,11 +631,25 @@ namespace IdentityServer4.Quickstart.UI
 
                     if (result.Succeeded)
                     {
+                        //var claims = new List<Claim>{
+                        //            new Claim(JwtClaimTypes.Name, model.RealName),
+                        //            new Claim(JwtClaimTypes.Email, model.Email),
+                        //            new Claim(JwtClaimTypes.EmailVerified, "false", ClaimValueTypes.Boolean),
+                        //            new Claim("rolename", rName),
+                        //        };
+
+                        //claims.AddRange((new List<int> { 6 }).Select(s => new Claim(JwtClaimTypes.Role, s.ToString())));
+
+
+                        //result = _userManager.AddClaimsAsync(userItem, claims).Result;
+
+
                         result = await _userManager.AddClaimsAsync(user, new Claim[]{
                             new Claim(JwtClaimTypes.Name, model.RealName),
                             new Claim(JwtClaimTypes.Email, model.Email),
                             new Claim(JwtClaimTypes.EmailVerified, "false", ClaimValueTypes.Boolean),
-                            new Claim(JwtClaimTypes.Role, rName)
+                            new Claim(JwtClaimTypes.Role, "6"),
+                            new Claim("rolename", rName),
                         });
 
                         if (result.Succeeded)
@@ -629,7 +682,7 @@ namespace IdentityServer4.Quickstart.UI
         public IActionResult Users(string returnUrl = null)
         {
             ViewData["ReturnUrl"] = returnUrl;
-            var users = _userManager.Users.Where(d => !d.tdIsDelete).OrderByDescending(d => d.Id).ToList();
+            var users = _userManager.Users.Where(d => !d.tdIsDelete).OrderByDescending(d => d.Id).Take(50).ToList();
 
             return View(users);
         }
@@ -654,7 +707,7 @@ namespace IdentityServer4.Quickstart.UI
                 return NotFound();
             }
 
-            return View(new EditViewModel(user.Id.ToString(), user.LoginName, user.UserName, user.Email, await _userManager.GetClaimsAsync(user)));
+            return View(new EditViewModel(user.Id.ToString(), user.LoginName, user.UserName, user.Email, await _userManager.GetClaimsAsync(user), user.FirstQuestion, user.SecondQuestion));
         }
 
 
@@ -673,6 +726,9 @@ namespace IdentityServer4.Quickstart.UI
 
                 if (userItem != null)
                 {
+                    var oldName = userItem.LoginName;
+                    var oldEmail = userItem.Email;
+
                     userItem.UserName = model.LoginName;
                     userItem.LoginName = model.UserName;
                     userItem.Email = model.Email;
@@ -683,7 +739,37 @@ namespace IdentityServer4.Quickstart.UI
 
                     if (result.Succeeded)
                     {
-                        return RedirectToLocal(returnUrl);
+                        var removeClaimsIdRst = await _userManager.RemoveClaimsAsync(userItem,
+                            new Claim[]{
+                                new Claim(JwtClaimTypes.Name, oldName),
+                                new Claim(JwtClaimTypes.Email, oldEmail),
+                        });
+
+                        if (removeClaimsIdRst.Succeeded)
+                        {
+                            var addClaimsIdRst = await _userManager.AddClaimsAsync(userItem,
+                                new Claim[]{
+                                    new Claim(JwtClaimTypes.Name, userItem.LoginName),
+                                    new Claim(JwtClaimTypes.Email, userItem.Email),
+                            });
+
+                            if (addClaimsIdRst.Succeeded)
+                            {
+                                return RedirectToLocal(returnUrl);
+                            }
+                            else
+                            {
+                                AddErrors(addClaimsIdRst);
+
+                            }
+                        }
+                        else
+                        {
+                            AddErrors(removeClaimsIdRst);
+
+                        }
+
+
                     }
 
                 }
@@ -699,6 +785,121 @@ namespace IdentityServer4.Quickstart.UI
             return View(model);
         }
 
+
+
+        [HttpGet]
+        [Route("account/my")]
+        [Authorize]
+        public async Task<IActionResult> My(string returnUrl = null)
+        {
+            ViewData["ReturnUrl"] = returnUrl;
+
+            var id = (int.Parse)(HttpContext.User.Claims.FirstOrDefault(c => c.Type == "sub")?.Value);
+            if (id <= 0)
+            {
+                return NotFound();
+            }
+
+            var user = await _userManager.FindByIdAsync(id.ToString());
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            return View(new EditViewModel(user.Id.ToString(), user.LoginName, user.UserName, user.Email, await _userManager.GetClaimsAsync(user), user.FirstQuestion, user.SecondQuestion));
+        }
+
+        [HttpPost]
+        [Route("account/my")]
+        [ValidateAntiForgeryToken]
+        [Authorize]
+        public async Task<IActionResult> My(EditViewModel model, string returnUrl = null)
+        {
+            ViewData["ReturnUrl"] = returnUrl;
+            IdentityResult result = new IdentityResult();
+
+            if (ModelState.IsValid)
+            {
+                var id = (int.Parse)(HttpContext.User.Claims.FirstOrDefault(c => c.Type == "sub")?.Value);
+                if (id <= 0)
+                {
+                    return NotFound();
+                }
+
+                // id为当前登录人
+                if (model.Id == id.ToString())
+                {
+                    var userItem = _userManager.FindByIdAsync(model.Id).Result;
+                    if (userItem != null)
+                    {
+
+
+                        var oldName = userItem.LoginName;
+                        var oldEmail = userItem.Email;
+
+                        userItem.UserName = model.LoginName;
+                        userItem.LoginName = model.UserName;
+                        userItem.Email = model.Email;
+                        userItem.RealName = model.UserName;
+                        userItem.FirstQuestion = model.FirstQuestion;
+                        userItem.SecondQuestion = model.SecondQuestion;
+
+
+                        result = await _userManager.UpdateAsync(userItem);
+
+                        if (result.Succeeded)
+                        {
+                            var removeClaimsIdRst = await _userManager.RemoveClaimsAsync(userItem,
+                                new Claim[]{
+                                new Claim(JwtClaimTypes.Name, oldName),
+                                new Claim(JwtClaimTypes.Email, oldEmail),
+                            });
+
+                            if (removeClaimsIdRst.Succeeded)
+                            {
+                                var addClaimsIdRst = await _userManager.AddClaimsAsync(userItem,
+                                    new Claim[]{
+                                    new Claim(JwtClaimTypes.Name, userItem.LoginName),
+                                    new Claim(JwtClaimTypes.Email, userItem.Email),
+                                });
+
+                                if (addClaimsIdRst.Succeeded)
+                                {
+                                    return RedirectToLocal(returnUrl);
+                                }
+                                else
+                                {
+                                    AddErrors(addClaimsIdRst);
+
+                                }
+                            }
+                            else
+                            {
+                                AddErrors(removeClaimsIdRst);
+
+                            }
+
+
+                        }
+
+
+                    }
+                    else
+                    {
+                        ModelState.AddModelError(string.Empty, $"{userItem?.UserName} no exist!");
+                    }
+                }
+                else
+                {
+                    ModelState.AddModelError(string.Empty, $"您无权修改该数据!");
+                }
+                AddErrors(result);
+            }
+
+            // If we got this far, something failed, redisplay form
+            return View(model);
+        }
 
 
         [HttpPost]
@@ -771,8 +972,8 @@ namespace IdentityServer4.Quickstart.UI
         {
             if (ModelState.IsValid)
             {
-                var email = HttpContext.User.Claims.FirstOrDefault(c => c.Type == "email").Value;
-                var roleName = HttpContext.User.Claims.FirstOrDefault(c => c.Type == "rolename").Value;
+                var email = HttpContext.User.Claims.FirstOrDefault(c => c.Type == "email")?.Value;
+                var roleName = HttpContext.User.Claims.FirstOrDefault(c => c.Type == "rolename")?.Value;
                 if (email == model.Email || (roleName == "SuperAdmin"))
                 {
 
@@ -781,14 +982,32 @@ namespace IdentityServer4.Quickstart.UI
                     if (user == null)
                     {
                         // Don't reveal that the user does not exist or is not confirmed
-                        return RedirectToAction(nameof(ForgotPasswordConfirmation));
+                        return RedirectToAction(nameof(ForgotPasswordConfirmation), new { ResetPassword = "邮箱不存在！" });
                     }
 
                     // For more information on how to enable account confirmation and password reset please
                     // visit https://go.microsoft.com/fwlink/?LinkID=532713
                     var code = await _userManager.GeneratePasswordResetTokenAsync(user);
 
-                    var callbackUrl = Url.ResetPasswordCallbackLink(user.Id.ToString(), code, Request.Scheme);
+                    var accessCode = MD5Helper.MD5Encrypt32(user.Id + code);
+                    var callbackUrl = Url.ResetPasswordCallbackLink(user.Id.ToString(), code, Request.Scheme, accessCode);
+
+                    var ResetPassword = $"Please reset your password by clicking here: <a href='{callbackUrl}'>link</a>";
+
+                    return RedirectToAction(nameof(ForgotPasswordConfirmation), new { ResetPassword = ResetPassword });
+                }
+                else if (!string.IsNullOrEmpty(model.FirstQuestion) && !string.IsNullOrEmpty(model.SecondQuestion))
+                {
+                    var user = _userManager.Users.FirstOrDefault(d => d.Email == model.Email && d.FirstQuestion == model.FirstQuestion && d.SecondQuestion == model.SecondQuestion);
+                    if (user == null)
+                    {
+                        return RedirectToAction(nameof(ForgotPasswordConfirmation), new { ResetPassword = "密保答案错误！" });
+                    }
+
+                    var code = await _userManager.GeneratePasswordResetTokenAsync(user);
+
+                    var accessCode = MD5Helper.MD5Encrypt32(user.Id + code);
+                    var callbackUrl = Url.ResetPasswordCallbackLink(user.Id.ToString(), code, Request.Scheme, accessCode);
 
 
                     var ResetPassword = $"Please reset your password by clicking here: <a href='{callbackUrl}'>link</a>";
@@ -797,7 +1016,8 @@ namespace IdentityServer4.Quickstart.UI
                 }
                 else
                 {
-                    return RedirectToAction(nameof(AccessDenied), new { errorMsg = "非超级管理员，只能修改自己密码" });
+                    var forgetPwdUrl = "https://github.com/anjoy8/Blog.IdentityServer/issues";
+                    return RedirectToAction(nameof(AccessDenied), new { errorMsg = $"只能在登录状态下或者输入正确密保的情况下，修改密码! <br>如果忘记密码，请联系超级管理员手动重置：<a href='{forgetPwdUrl}'>link</a>，提Issue" });
                 }
             }
 
@@ -817,13 +1037,13 @@ namespace IdentityServer4.Quickstart.UI
         [HttpGet]
         [Route("account/reset-password")]
         [AllowAnonymous]
-        public IActionResult ResetPassword(string code = null)
+        public IActionResult ResetPassword(string code = null, string accessCode = null, string userId = "")
         {
-            if (code == null)
+            if (code == null || accessCode == null)
             {
-                throw new ApplicationException("A code must be supplied for password reset.");
+                return RedirectToAction(nameof(AccessDenied), new { errorMsg = "code与accessCode必须都不能为空！" });
             }
-            var model = new ResetPasswordViewModel { Code = code };
+            var model = new ResetPasswordViewModel { Code = code, AccessCode = accessCode, userId = userId };
             return View(model);
         }
 
@@ -837,12 +1057,28 @@ namespace IdentityServer4.Quickstart.UI
             {
                 return View(model);
             }
+
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
             {
                 // Don't reveal that the user does not exist
                 return RedirectToAction(nameof(ResetPasswordConfirmation));
             }
+
+
+            // 防止篡改
+            var getAccessCode = MD5Helper.MD5Encrypt32(model.userId + model.Code);
+            if (getAccessCode != model.AccessCode)
+            {
+                return RedirectToAction(nameof(AccessDenied), new { errorMsg = "随机码已被篡改！密码重置失败！" });
+            }
+
+            if (user != null && user.Id.ToString() != model.userId)
+            {
+                return RedirectToAction(nameof(AccessDenied), new { errorMsg = "不能修改他人邮箱！密码重置失败！" });
+            }
+
+
             var result = await _userManager.ResetPasswordAsync(user, model.Code, model.Password);
             if (result.Succeeded)
             {
