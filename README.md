@@ -4,12 +4,29 @@
 &nbsp;
 &nbsp;
 
+## Info 
+1、项目支持SqlServer和Mysql，默认Mysql，在配置文件中可以设置："IsMysql": true,  
+2、如果用mysql，直接执行update-database即可，迁移文件在data下的MigrationsMySql文件夹；    
+3、如果不想用自带的迁移文件，先删掉data下的MigrationsMySql文件夹，然后执行（具体步骤在SeedData.cs中）；  
+
 ## 给个星星! ⭐️
 如果你喜欢这个项目或者它帮助你, 请给 Star~（辛苦星咯）
 
 *********************************************************
 
   
+## 售后服务与支持  
+
+鼓励作者，简单打赏，入微信群，随时随地解答我框架中（NetCore、Vue、DDD、IdentityServer4等）的疑难杂症。     
+注意主要是帮忙解决bug和思路，不会远程授课，但是可以适当发我代码，我帮忙调试，       
+打赏的时候，备注自己的微信号，我拉你进群，两天内没回应，QQ私聊我（3143422472）；   
+
+[赞赏列表](http://apk.neters.club/.doc/Contribution/)  
+
+ 
+<img src="http://apk.neters.club/laozhangisphigood.jpg" alt="赞赏码" width="300" >
+[图片若加载不出来，点这里](http://apk.neters.club/laozhangisphigood.jpg)
+
   <ul>
 <li></li>
 <li><a id="post_title_link_10529982" href="https://www.bilibili.com/video/BV1vC4y1p7Za?p=14">前端Blog.Admin-后端Blog.Core-认证中心(本项目) 快速启动 </a></li>
